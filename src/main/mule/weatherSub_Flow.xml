@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<http:request-config name="weather_Config" doc:name="HTTP Request configuration" doc:id="9df515f4-7224-4dee-943f-440a48f999d9" basePath="/data/2.5" >
+		<http:request-connection host="api.openweathermap.org" />
+	</http:request-config>
+	<sub-flow name="weatherSub_FlowSub_Flow" doc:id="bddb0589-1bda-47d1-b3d7-2451a0dcbb0d" >
+		<http:request method="GET" doc:name="Request" doc:id="41d0966e-14db-48d4-87de-6b5c897bce52" config-ref="weather_Config" path="/weather?lat={lat}&amp;lon={lon}&amp;appid={API key}">
+			<http:query-params ><![CDATA[#[output application/java
+---
+{
+	"appid" : "Value",
+	"lat" : vars.lat,
+	"lon" : vars.lon
+}]]]></http:query-params>
+		</http:request>
+	</sub-flow>
+</mule>
