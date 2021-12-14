@@ -5,7 +5,10 @@ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/
         <http:listener-connection host="0.0.0.0" port="8082" />
     </http:listener-config>
     <apikit:config name="craft-decision-service-api-config" api="resource::b61a6aca-c47c-4e5f-96e3-8e39eed3209d:craft-decision-service-api:1.0.0:raml:zip:craft-decision-service-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
-    <flow name="craft-decision-service-api-main">
+    <http:request-config name="exchangeRate" doc:name="HTTP Request configuration" doc:id="926ba6a2-bc30-47ff-991c-85a94c37d09d" basePath="/v6/{api}/pair/{base}" >
+		<http:request-connection protocol="HTTPS" host="v6.exchangerate-api.com" />
+	</http:request-config>
+	<flow name="craft-decision-service-api-main">
         <http:listener config-ref="craft-decision-service-api-httpListenerConfig" path="/api/*">
             <http:response statusCode="#[vars.httpStatus default 200]">
                 <http:headers>#[vars.outboundHeaders default {}]</http:headers>
@@ -131,10 +134,10 @@ output application/json
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
-//(payload.data orderBy $.latest_data.deaths) [0 to 2]
 
 
-payload.TopThreeCountries [0 to 2]
+payload
+
 ]]></ee:set-payload>
             </ee:message>
 			<ee:variables >
@@ -142,24 +145,127 @@ payload.TopThreeCountries [0 to 2]
 output application/json
 ---
 payload]]></ee:set-variable>
+				<ee:set-variable variableName="weatherUri" ><![CDATA[%dw 2.0
+output application/json
+---
+payload.coordinates
+
+]]></ee:set-variable>
+				<ee:set-variable variableName="exchangeApi" ><![CDATA[%dw 2.0
+output application/json
+
+var switchToCurrency =  (payload.Country_Code == vars.covidInfo.code) filter{
+	Currency_Code: payload.Currency_Code
+}
+---
+switchToCurrency]]></ee:set-variable>
 			</ee:variables>
         </ee:transform>
-		<http:request method="GET" doc:name="Call Weather API" doc:id="fba5df50-4464-4a0e-85dd-9c735ba317a0" config-ref="weather_Config" path="/weather">
+		<scatter-gather doc:name="Scatter-Gather" doc:id="b1d3cd99-0994-4ea7-bcbc-258cc822cb78" >
+			<route >
+				<parallel-foreach doc:name="Parallel For Each" doc:id="d04309dd-5929-4413-9979-9b00e9909bfe" collection="#[vars.weatherUri]">
+			<http:request method="GET" doc:name="Call Weather API" doc:id="fba5df50-4464-4a0e-85dd-9c735ba317a0" config-ref="weather_Config" path="/weather">
 					<http:query-params><![CDATA[#[output application/java
 ---
 {
-	"appid" : '06676ad339beeb5e0e36b7d5ce5412ca',
-	"lat" : payload.TopThreeCountries.latitude,
-	"lon" : payload.TopThreeCountries.longtude
+	appid : '06676ad339beeb5e0e36b7d5ce5412ca',
+	exclude: 'hourly,alerts,minutely,current',
+	lan : payload.latitude,
+	lon: payload.longitude
+	
 }]]]></http:query-params>
 				</http:request>
-		<ee:transform doc:name="Transform Message" doc:id="03f55b64-81c9-4ed3-897d-57c8b364eca6" >
-			<ee:message >
-				<ee:set-payload ><![CDATA[%dw 2.0
+		</parallel-foreach>
+				<ee:transform doc:name="Transform Message" doc:id="fcdeea85-c7ae-49b7-9b79-67b06c43c48d" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+
+var list = payload map $.payload map {
+				temp: $..main.temp
+}
+---
+list 
+
+]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</route>
+			<route >
+				<parallel-foreach doc:name="Parallel For Each_" doc:id="edc8d1f4-ee92-4b10-879e-07a3d001eaa0" collection="#[vars.exchangeApi]">
+			<http:request method="GET" doc:name="Call excangeRate API" doc:id="cd081593-639a-419b-b451-6cb0335ba611" config-ref="exchangeRate" path="/USD">
+				<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	api : '17acc640e6b57f37b32843f9',
+	base: payload
+}]]]></http:uri-params>
+			</http:request>
+			<logger level="INFO" doc:name="Copy_of_Logger" doc:id="b049feda-a90f-40d5-8682-2291f1ea679f" message="#[payload] ---- each batch" />
+		</parallel-foreach>
+				<ee:transform doc:name="Transform Message" doc:id="819e2a5f-b966-4095-a3e4-d4003ff142c2" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map $.payload]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</route>
+			<route >
+				<try doc:name="Try" doc:id="2498e1e7-0667-408b-a2a3-e71c0e0ae5f9" >
+					<parallel-foreach doc:name="Copy_of_Parallel For Each_" doc:id="6de56f6d-0330-470e-a6e5-83314698e6a0" collection="#[vars.exchangeApi]">
+					<http:request method="GET" doc:name="Copy_of_Call excangeRate API" doc:id="45788f2d-f899-4378-82e1-357eb742ca6c" config-ref="exchangeRate" path="/USD">
+						<http:uri-params><![CDATA[#[output application/java
+---
+{
+	api : '17acc640e6b57f37b32843f9',
+	base: payload
+}]]]></http:uri-params>
+					</http:request>
+					<logger level="INFO" doc:name="Copy_of_Copy_of_Logger" doc:id="e4e1fca7-6431-49f2-9860-1d37ee0400b9" message="#[payload] ---- each batch" />
+				</parallel-foreach>
+					<ee:transform doc:name="Transform Message" doc:id="b2d9a7f2-7e54-4f20-94e9-7844949ec05c">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
 output application/java
 ---
-[vars.covidInfo,payload]]]></ee:set-payload>
-			</ee:message>
-		</ee:transform>
+{
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+					<error-handler >
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="bfe0d925-d57e-4618-a8cb-9ad44cf1eacd" >
+							<ee:transform doc:name="Transform Message" doc:id="33fecf7f-3dc4-4d43-9eeb-9b6bb7e9b989" >
+								<ee:message >
+									<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+null]]></ee:set-payload>
+								</ee:message>
+							</ee:transform>
+						</on-error-continue>
+					</error-handler>
+				</try>
+			</route>
+		</scatter-gather>
+		<ee:transform doc:name="Transform Message" doc:id="6b668d26-4257-436d-b86c-b0972fceddb1">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+
+---
+
+flatten (payload..payload)
+]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="weatherPayload"><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
     </flow>
 </mule>
